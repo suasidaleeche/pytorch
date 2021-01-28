@@ -9,6 +9,7 @@
 #include <torch/csrc/jit/serialization/import.h>
 #include <torch/custom_class.h>
 #include <torch/torch.h>
+#include <torch/csrc/jit/backends/backend_detail.h>
 
 #include <unordered_set>
 
@@ -336,6 +337,29 @@ class TorchBindLiteInterpreterTestStruct
     return ss.str();
   }
 };
+
+TEST(LiteInterpreterTest, ToBackend) {
+  Module m("M");
+  m.define(R"JIT(
+    def forward(self, x):
+      return 2 * x
+  )JIT");
+
+  c10::Dict<IValue, IValue> compile_spec(StringType::get(), AnyType::get());
+  c10::Dict<IValue, IValue> fake_dict(StringType::get(), AnyType::get());
+  fake_dict.insert("", "");
+  compile_spec.insert("forward", fake_dict);
+  auto any_dict_ty = DictType::create(StringType::get(), AnyType::get());
+  auto lowered_m = torch::jit::detail::codegen_backend_module(
+      "test_backend", m, compile_spec, any_dict_ty);
+//  lowered_m.save("/Users/myuan/models/backend/backend_c.pt");
+
+  auto minput = 5 * torch::ones({});
+  auto ref = m.run_method("forward", minput).toTensor().item<float>();
+  auto res = lowered_m.run_method("forward", minput);
+  double output = res.toTensor().item<float>();
+  AT_ASSERT(ref == output);
+}
 
 TEST(LiteInterpreterTest, BuiltinFunction) {
   script::Module m("m");
