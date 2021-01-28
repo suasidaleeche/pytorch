@@ -2,6 +2,7 @@ from torch.fx import Graph, GraphModule, Node, symbolic_trace
 
 import copy
 from typing import Callable, Dict, List, NamedTuple, Set
+from itertools import permutations
 
 class Match(NamedTuple):
     # Node from which the match was found
@@ -15,6 +16,7 @@ class SubgraphMatcher:
         if len(pattern.nodes) == 0:
             raise ValueError("SubgraphMatcher cannot be initialized with an "
                              "empty pattern")
+        # `self.pattern_anchor` is the output Node in `pattern`
         self.pattern_anchor = next(iter(reversed(pattern.nodes)))
         # Maps nodes in the pattern subgraph to nodes in the larger graph
         self.nodes_map: Dict[Node, Node] = {}
@@ -27,11 +29,26 @@ class SubgraphMatcher:
         Pattern matching is done by recursively comparing the pattern
         node's use-def relationships against the graph node's.
         """
+        if anchor.op == "placeholder":
+            return False
         self.nodes_map = {}
-        return self._match_nodes(self.pattern_anchor, anchor)
+        # Return True if we've successfully matched all the nodes in the
+        # pattern. We check the return value of `self._match_nodes`
+        # to see if there was a match; we confirm that we matched all
+        # the nodes by comparing the lengths. The edge case here is that
+        # `self._match_nodes` could return True when only part of the
+        # graph has been matched. This happens when the output node's
+        # list of input nodes is longer than the list of input nodes of
+        # the node gets matched to. (Two test cases that demonstrate
+        # this are `test_subgraph_rewriter_container_output` and
+        # `test_subgraph_rewriter_nested_container_output` in
+        # `test/fx/test_subgraph_rewriter.py`)
+        return (self._match_nodes(self.pattern_anchor, anchor)
+                and len(self.nodes_map) == len(self.pattern.nodes))
 
     # Compare the pattern node `pn` against the graph node `gn`
     def _match_nodes(self, pn : Node, gn : Node) -> bool:
+
         # Check if we've already matched these nodes in the current
         # traversal
         if pn in self.nodes_map:
@@ -55,11 +72,20 @@ class SubgraphMatcher:
 
         # Traverse the use-def relationships to ensure that `pn` is a true
         # match for `gn`
-        if (pn.op != "output"
-                and len(pn.all_input_nodes) != len(gn.all_input_nodes)):
-            return False
-        match_found = all(self._match_nodes(pn_, gn_) for pn_, gn_
-                          in zip(pn.all_input_nodes, gn.all_input_nodes))
+        match_found = False
+        if pn.op == "output":
+            # This covers the case in which the original graph Node that
+            # matched to the pattern subgraph's output has more than
+            # one input Node
+            for perm in list(permutations(gn.all_input_nodes)):
+                match_found = all(self._match_nodes(pn_, gn_) for pn_, gn_
+                                  in zip(pn.all_input_nodes, perm))
+                if match_found:
+                    break
+        else:
+            match_found = (len(pn.all_input_nodes) == len(gn.all_input_nodes)
+                           and all(self._match_nodes(pn_, gn_) for pn_, gn_
+                                   in zip(pn.all_input_nodes, gn.all_input_nodes)))
         if not match_found:
             self.nodes_map.pop(pn)
             return False
@@ -67,7 +93,7 @@ class SubgraphMatcher:
         return True
 
 
-def replace_pattern(gm : GraphModule, pattern : Callable, replacement : Callable) -> None:
+def replace_pattern(gm : GraphModule, pattern : Callable, replacement : Callable) -> bool:
     """
     Matches all possible non-overlapping sets of operators and their
     data dependencies (``pattern``) in the Graph of a GraphModule
@@ -78,6 +104,10 @@ def replace_pattern(gm : GraphModule, pattern : Callable, replacement : Callable
         ``gm``: The GraphModule that wraps the Graph to operate on
         ``pattern``: The subgraph to match in ``gm`` for replacement
         ``replacement``: The subgraph to replace ``pattern`` with
+
+    Returns:
+        bool: True if there was at least one match found in ``gm``,
+        False otherwise
 
     Examples:
 
@@ -220,6 +250,9 @@ def replace_pattern(gm : GraphModule, pattern : Callable, replacement : Callable
                 return True
         return False
 
+    if not matches:
+        return False
+
     for match in matches:
 
         # Skip overlapping matches
@@ -265,15 +298,42 @@ def replace_pattern(gm : GraphModule, pattern : Callable, replacement : Callable
         with original_graph.inserting_before(subgraph_output):
             copied_output = original_graph.graph_copy(replacement_graph,
                                                       val_map)
-        assert isinstance(copied_output, Node)
 
-        # We only want to copy in the output node from `pattern` if we
-        # have an output-output match. Otherwise, we leave out the
-        # `pattern` output node so we don't have two outputs in the
-        # resultant graph
+        # Hook the output Node of the replacement subgraph in to the
+        # original Graph at the correct location
+
+        # CASE 1: We need to hook the replacement subgraph in somewhere
+        # in the middle of the graph. We replace the Node in the
+        # original graph that corresponds to the end of the pattern
+        # subgraph
         if subgraph_output.op != "output":
-            subgraph_output = subgraph_output.args[0]    # type: ignore
-        subgraph_output.replace_all_uses_with(copied_output)
+            # `subgraph_output` may have multiple args. These args could
+            # be from the orignal graph, or they could have come from
+            # the insertion of `replacement_subgraph`. We need to find
+            # the Node that was originally matched as part of
+            # `pattern` (i.e. a Node from the original graph). We can
+            # figure this out by looking in `match.nodes_map`. The map
+            # was created before `replacement_subgraph` was spliced in,
+            # so we know that, if a Node is in `match.nodes_map.values`,
+            # it must have come from the original graph
+            for n in subgraph_output.args:
+                if n.op != "placeholder" and n in match.nodes_map.values():
+                    subgraph_output = n
+                    break
+            assert subgraph_output.op != "output"
+            subgraph_output.replace_all_uses_with(copied_output)
+        # CASE 2: The pattern subgraph match extends to the end of the
+        # original graph, so we need to change the current graph's
+        # output Node to reflect the insertion of the replacement graph.
+        # We'll keep the current output Node, but update its args and
+        # `_input_nodes` as necessary
+        else:
+            subgraph_output.args = ([copied_output])
+            if type(copied_output) == Node:
+                subgraph_output._input_nodes = {copied_output: None}
+            else:
+                subgraph_output._input_nodes = {n: None for n in [*copied_output]}
+            subgraph_output.replace_all_uses_with(copied_output)
 
         # Erase the `pattern` nodes
         for node in reversed(original_graph.nodes):
@@ -283,3 +343,5 @@ def replace_pattern(gm : GraphModule, pattern : Callable, replacement : Callable
     # Update the passed-in GraphModule to reflect the new state of
     # `original_graph`
     gm.recompile()
+
+    return True
