@@ -225,7 +225,7 @@ Tensor _fw_primal(const Tensor & self, int64_t level) {
 }
 
 // We don't have an outplace copy, so this can't be generated automatically
-Tensor & copy_(Tensor & self, const Tensor & src, bool non_blocking) {
+Tensor & copy_(c10::DispatchKeySet ks, Tensor & self, const Tensor & src, bool non_blocking) {
   // TODO: once copy is exposed in Declarations.yaml we may be able to bind
   // it automatically
   auto& self_ = unpack(self, "self", 0);
@@ -242,7 +242,195 @@ Tensor & copy_(Tensor & self, const Tensor & src, bool non_blocking) {
   }
   {
     at::AutoNonVariableTypeMode non_var_type_mode(true);
-    self_.copy_(src_, non_blocking);
+    static auto op = c10::Dispatcher::singleton()
+      .findSchemaOrThrow("aten::copy_", "")
+      .typed<Tensor & (Tensor &, const Tensor &, bool)>();
+    c10::Dispatcher::singleton()
+      .call<Tensor &, Tensor &, const Tensor &, bool>(op, self_, src_, non_blocking);
+  }
+  increment_version(self);
+  rebase_history(self , std::move(grad_fn));
+
+  if (isDifferentiableType(self.scalar_type()) &&
+      (generated::details::isFwGradDefined(self) || generated::details::isFwGradDefined(src))) {
+    auto self_fw_grad = generated::details::toLegacyFwGrad(self);
+    auto src_fw_grad = generated::details::toLegacyFwGrad(src);
+    Tensor new_fw_grad;
+    if (self_fw_grad.defined()) {
+      if (src_fw_grad.defined()) {
+        new_fw_grad = self_fw_grad.copy_(src_fw_grad);
+      } else {
+        new_fw_grad = self_fw_grad.fill_(0);
+      }
+    } else {
+      new_fw_grad = src_fw_grad;
+    }
+    self.set_fw_grad(new_fw_grad, /* level */ 0, /* is_inplace_op */ true);
+  }
+
+  return self;
+}
+
+Tensor & copy_1(c10::DispatchKeySet ks, Tensor & self, const Tensor & src, bool non_blocking) {
+  // TODO: once copy is exposed in Declarations.yaml we may be able to bind
+  // it automatically
+  auto& self_ = unpack(self, "self", 0);
+  auto& src_ = unpack(src, "src", 1);
+  std::shared_ptr<CopyBackwards> grad_fn;
+  auto requires_grad = compute_requires_grad(self, src);
+  requires_grad &= isDifferentiableType(self.scalar_type());
+  check_inplace(self, requires_grad);
+  if (requires_grad) {
+    grad_fn = std::make_shared<CopyBackwards>();
+    grad_fn->set_next_edges(collect_next_edges(self, src));
+    grad_fn->src_options = src.options();
+    grad_fn->src_device = src.device();
+  }
+  {
+    at::AutoNonVariableTypeMode non_var_type_mode(true);
+    static auto op = c10::Dispatcher::singleton()
+      .findSchemaOrThrow("aten::copy_", "")
+      .typed<Tensor & (Tensor &, const Tensor &, bool)>();
+    c10::Dispatcher::singleton()
+      .call1<Tensor &, Tensor &, const Tensor &, bool>(op, ks & c10::after_autograd_keyset, self_, src_, non_blocking);
+  }
+  increment_version(self);
+  rebase_history(self , std::move(grad_fn));
+
+  if (isDifferentiableType(self.scalar_type()) &&
+      (generated::details::isFwGradDefined(self) || generated::details::isFwGradDefined(src))) {
+    auto self_fw_grad = generated::details::toLegacyFwGrad(self);
+    auto src_fw_grad = generated::details::toLegacyFwGrad(src);
+    Tensor new_fw_grad;
+    if (self_fw_grad.defined()) {
+      if (src_fw_grad.defined()) {
+        new_fw_grad = self_fw_grad.copy_(src_fw_grad);
+      } else {
+        new_fw_grad = self_fw_grad.fill_(0);
+      }
+    } else {
+      new_fw_grad = src_fw_grad;
+    }
+    self.set_fw_grad(new_fw_grad, /* level */ 0, /* is_inplace_op */ true);
+  }
+
+  return self;
+}
+
+Tensor & copy_2(c10::DispatchKeySet ks, Tensor & self, const Tensor & src, bool non_blocking) {
+  // TODO: once copy is exposed in Declarations.yaml we may be able to bind
+  // it automatically
+  auto& self_ = unpack(self, "self", 0);
+  auto& src_ = unpack(src, "src", 1);
+  std::shared_ptr<CopyBackwards> grad_fn;
+  auto requires_grad = compute_requires_grad(self, src);
+  requires_grad &= isDifferentiableType(self.scalar_type());
+  check_inplace(self, requires_grad);
+  if (requires_grad) {
+    grad_fn = std::make_shared<CopyBackwards>();
+    grad_fn->set_next_edges(collect_next_edges(self, src));
+    grad_fn->src_options = src.options();
+    grad_fn->src_device = src.device();
+  }
+  {
+    at::AutoNonVariableTypeMode non_var_type_mode(true);
+    static auto op = c10::Dispatcher::singleton()
+      .findSchemaOrThrow("aten::copy_", "")
+      .typed<Tensor & (Tensor &, const Tensor &, bool)>();
+    c10::Dispatcher::singleton()
+      .call2<Tensor &, Tensor &, const Tensor &, bool>(op, ks & c10::after_autograd_keyset, self_, src_, non_blocking);
+  }
+  increment_version(self);
+  rebase_history(self , std::move(grad_fn));
+
+  if (isDifferentiableType(self.scalar_type()) &&
+      (generated::details::isFwGradDefined(self) || generated::details::isFwGradDefined(src))) {
+    auto self_fw_grad = generated::details::toLegacyFwGrad(self);
+    auto src_fw_grad = generated::details::toLegacyFwGrad(src);
+    Tensor new_fw_grad;
+    if (self_fw_grad.defined()) {
+      if (src_fw_grad.defined()) {
+        new_fw_grad = self_fw_grad.copy_(src_fw_grad);
+      } else {
+        new_fw_grad = self_fw_grad.fill_(0);
+      }
+    } else {
+      new_fw_grad = src_fw_grad;
+    }
+    self.set_fw_grad(new_fw_grad, /* level */ 0, /* is_inplace_op */ true);
+  }
+
+  return self;
+}
+
+Tensor & copy_3(c10::DispatchKeySet ks, Tensor & self, const Tensor & src, bool non_blocking) {
+  // TODO: once copy is exposed in Declarations.yaml we may be able to bind
+  // it automatically
+  auto& self_ = unpack(self, "self", 0);
+  auto& src_ = unpack(src, "src", 1);
+  std::shared_ptr<CopyBackwards> grad_fn;
+  auto requires_grad = compute_requires_grad(self, src);
+  requires_grad &= isDifferentiableType(self.scalar_type());
+  check_inplace(self, requires_grad);
+  if (requires_grad) {
+    grad_fn = std::make_shared<CopyBackwards>();
+    grad_fn->set_next_edges(collect_next_edges(self, src));
+    grad_fn->src_options = src.options();
+    grad_fn->src_device = src.device();
+  }
+  {
+    at::AutoNonVariableTypeMode non_var_type_mode(true);
+    static auto op = c10::Dispatcher::singleton()
+      .findSchemaOrThrow("aten::copy_", "")
+      .typed<Tensor & (Tensor &, const Tensor &, bool)>();
+    c10::Dispatcher::singleton()
+      .call3<Tensor &, Tensor &, const Tensor &, bool>(op, ks & c10::after_autograd_keyset, self_, src_, non_blocking);
+  }
+  increment_version(self);
+  rebase_history(self , std::move(grad_fn));
+
+  if (isDifferentiableType(self.scalar_type()) &&
+      (generated::details::isFwGradDefined(self) || generated::details::isFwGradDefined(src))) {
+    auto self_fw_grad = generated::details::toLegacyFwGrad(self);
+    auto src_fw_grad = generated::details::toLegacyFwGrad(src);
+    Tensor new_fw_grad;
+    if (self_fw_grad.defined()) {
+      if (src_fw_grad.defined()) {
+        new_fw_grad = self_fw_grad.copy_(src_fw_grad);
+      } else {
+        new_fw_grad = self_fw_grad.fill_(0);
+      }
+    } else {
+      new_fw_grad = src_fw_grad;
+    }
+    self.set_fw_grad(new_fw_grad, /* level */ 0, /* is_inplace_op */ true);
+  }
+
+  return self;
+}
+
+Tensor & copy_4(c10::DispatchKeySet ks, Tensor & self, const Tensor & src, bool non_blocking) {
+  // TODO: once copy is exposed in Declarations.yaml we may be able to bind
+  // it automatically
+  auto& self_ = unpack(self, "self", 0);
+  auto& src_ = unpack(src, "src", 1);
+  std::shared_ptr<CopyBackwards> grad_fn;
+  auto requires_grad = compute_requires_grad(self, src);
+  requires_grad &= isDifferentiableType(self.scalar_type());
+  check_inplace(self, requires_grad);
+  if (requires_grad) {
+    grad_fn = std::make_shared<CopyBackwards>();
+    grad_fn->set_next_edges(collect_next_edges(self, src));
+    grad_fn->src_options = src.options();
+    grad_fn->src_device = src.device();
+  }
+  {
+    at::AutoNonVariableTypeMode non_var_type_mode(true);
+    static auto op = c10::Dispatcher::singleton()
+      .findSchemaOrThrow("aten::copy_", "")
+      .typed<Tensor & (Tensor &, const Tensor &, bool)>();
+    c10::Dispatcher::singleton()
+      .redispatch<Tensor &, Tensor &, const Tensor &, bool>(op, ks & c10::after_autograd_keyset, self_, src_, non_blocking);
   }
   increment_version(self);
   rebase_history(self , std::move(grad_fn));
@@ -268,6 +456,7 @@ Tensor & copy_(Tensor & self, const Tensor & src, bool non_blocking) {
 }
 
 Tensor& resize_(
+    c10::DispatchKeySet ks,
     Tensor& self,
     IntArrayRef size,
     c10::optional<MemoryFormat> optional_memory_format) {
@@ -277,7 +466,11 @@ Tensor& resize_(
   }
   {
     at::AutoNonVariableTypeMode non_var_type_mode(true);
-    self_.resize_(size, optional_memory_format);
+    static auto op = c10::Dispatcher::singleton()
+      .findSchemaOrThrow("aten::resize_", "")
+      .typed<Tensor & (Tensor &, IntArrayRef, c10::optional<MemoryFormat>)>();
+    c10::Dispatcher::singleton()
+      .call<Tensor &, Tensor &, IntArrayRef, c10::optional<MemoryFormat>>(op, ks & c10::after_autograd_keyset, const_cast<Tensor&>(self_), size, optional_memory_format);
   }
 
   if (self.fw_grad(/* level */ 0).defined()) {
@@ -288,6 +481,7 @@ Tensor& resize_(
 }
 
 Tensor& resize_as_(
+    c10::DispatchKeySet ks,
     Tensor& self,
     const Tensor& the_template,
     c10::optional<MemoryFormat> optional_memory_format) {
@@ -298,7 +492,11 @@ Tensor& resize_as_(
   }
   {
     at::AutoNonVariableTypeMode non_var_type_mode(true);
-    at::resize_as_(self_, the_template_, optional_memory_format);
+    static auto op = c10::Dispatcher::singleton()
+      .findSchemaOrThrow("aten::resize_as_", "")
+      .typed<Tensor & (Tensor &, const Tensor &, c10::optional<MemoryFormat>)>();
+    Tensor& dummy = c10::Dispatcher::singleton()
+      .call<Tensor &, Tensor &, const Tensor &, c10::optional<MemoryFormat>>(op, ks & c10::after_autograd_keyset, const_cast<Tensor&>(self_), the_template_, optional_memory_format);
   }
 
   // Handle fw grad
